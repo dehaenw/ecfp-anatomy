@@ -55,6 +55,11 @@ licensed CC BY 4.0.
 3. J. Deng, Z. Yang, H. Wang, I. Ojima, D. Samaras, F. Wang. *A systematic study of key elements underlying
    molecular property prediction.* Nat. Commun. 14, 6395 (2023).
 
+## License
+
+Code: MIT (see [LICENSE](LICENSE)). The ExpansionRx data is not included in this repository; it is
+downloaded at runtime and remains under its own CC BY 4.0 license.
+
 ## AI disclosure
 
 The original visualization was hand-written for a paper. Converting it into this interactive marimo notebook,
