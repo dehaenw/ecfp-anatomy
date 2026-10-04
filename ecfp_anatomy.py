@@ -957,7 +957,7 @@ def _(mo):
     * Atom attributions are exact for both Ridge (w · count) and LightGBM (TreeSHAP), but at 2048 bits part of them
       is borrowed from other environments: median 9 % (Ridge) and 13 % (LightGBM) for LogD, 10–20 % for LightGBM
       across endpoints, and 25–30 % for the worst-affected molecules. LightGBM also attributes to bits that are off
-      (median 12 % for LogD, up to 46 % for the efflux ratio), which cannot be mapped onto atoms.
+      (median 11 % for LogD, up to 46 % for the efflux ratio), which cannot be mapped onto atoms.
 
     The comparisons below are from 5 × 5 repeated CV with Tukey HSD [4] on all eight endpoints (ECFP4, 2048 bits) and
     can be reproduced with the panel above.
