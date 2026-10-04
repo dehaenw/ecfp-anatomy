@@ -1,29 +1,25 @@
 # Anatomy of an ECFP
 
-An interactive [marimo](https://marimo.io) notebook that asks: when a model says "bit 1380 matters", which chemistry
-is it talking about, and how often is the honest answer "several unrelated things"?
+[marimo](https://marimo.io) notebook on bit provenance and collisions in ECFP (Morgan) fingerprints, and their effect
+on models trained and interpreted on folded fingerprints. Entry for the
+[molab Notebook Competition #3: Cheminformatics Challenge](https://marimo.io/pages/events/notebook-competition-3).
 
-It follows a molecule through the three steps that produce an ECFP (Morgan) fingerprint: atomic neighborhoods,
-hashing with removal of redundant environments, and folding into a short bit vector. It then measures how often
-folding causes bit collisions in a real lead-optimization dataset, and what that does to model explanations.
+## Contents
 
-Entry for the [molab Notebook Competition #3: Cheminformatics Challenge](https://marimo.io/pages/events/notebook-competition-3).
+- **Anatomy figure**: every atom environment at every radius, linked to its folded bit, with redundant
+  environments and collisions marked. Molecule, radius, fpSize, ECFP/FCFP invariants and chirality are adjustable.
+- **Bit inspector**: all environments behind a bit, highlighted on the molecule.
+- **Dataset-scale collisions** on the OpenADMET / ExpansionRx training set: fraction of molecules with collided bits,
+  environments per bit, and the most frequent colliding pairs.
+- **Ridge vs LightGBM** on folded and unfolded count fingerprints for eight ADMET endpoints. Exact atom attribution
+  (w · count for Ridge, TreeSHAP for LightGBM) and the share of each attribution borrowed from other environments
+  on the same bits.
+- **Significance testing**: on-demand 5 × 5 repeated CV with repeated-measures ANOVA and Tukey HSD, following
+  Ash et al. [4], for the comparative claims. The rest of the notebook uses a single random split for speed and is
+  exploratory, not a benchmark.
+- **Bulk physchem baselines**: eight standard descriptors and ECFP0 counts against ECFP4.
 
-## What is in the notebook
-
-- **Fingerprint anatomy figure**: every atom environment at every radius, wired to the bit it lands on, with
-  redundant environments and collisions marked. Molecule, radius, fpSize, ECFP/FCFP invariants and chirality are
-  all interactive.
-- **Bit inspector**: all environments behind a chosen bit, highlighted on the molecule.
-- **Collisions at dataset scale** on the OpenADMET / ExpansionRx training set: share of molecules with collided
-  bits, environments per bit, and the colliding pairs that affect the most compounds.
-- **Ridge vs LightGBM** on folded and unfolded count fingerprints for eight ADMET endpoints, with exact atom-level
-  attribution (weight x count for Ridge, TreeSHAP for LightGBM) and the share of each explanation that is
-  "borrowed" from other environments sharing the same bits.
-- **Food for thought**: how much of the models' performance is reproduced by eight simple descriptors or by
-  atom-type counts alone (ECFP0).
-
-## Running it
+## Running
 
 Dependencies are declared in the notebook's inline script metadata (PEP 723), so either of these works:
 
@@ -37,8 +33,8 @@ uvx marimo run --sandbox ecfp_anatomy.py
 
 On [molab](https://molab.marimo.io), add the notebook from its GitHub URL using the new-notebook dropdown.
 
-The dataset is downloaded from Hugging Face when the notebook starts, so an internet connection is needed for the
-dataset and model sections. The single-molecule sections work offline.
+The dataset is downloaded from Hugging Face at startup. The dataset and model sections need a network connection;
+the single-molecule sections do not.
 
 ## Data
 
@@ -54,6 +50,9 @@ licensed CC BY 4.0.
    Development (2023). https://doi.org/10.1101/2023.11.07.566025
 3. J. Deng, Z. Yang, H. Wang, I. Ojima, D. Samaras, F. Wang. *A systematic study of key elements underlying
    molecular property prediction.* Nat. Commun. 14, 6395 (2023).
+4. J. R. Ash, C. Wognum, R. Rodríguez-Pérez, M. Aldeghi, A. C. Cheng, D.-A. Clevert, O. Engkvist, C. Fang,
+   D. J. Price, J. M. Hughes-Oliver, W. P. Walters. *Practically Significant Method Comparison Protocols for
+   Machine Learning in Small Molecule Drug Discovery.* J. Chem. Inf. Model. 65, 9398–9411 (2025).
 
 ## License
 
@@ -62,5 +61,5 @@ downloaded at runtime and remains under its own CC BY 4.0 license.
 
 ## AI disclosure
 
-The original visualization was hand-written for a paper. Converting it into this interactive marimo notebook,
-including the dataset and modelling sections, was done with help from Claude (Anthropic).
+The visualization was originally hand-written for a paper. The marimo conversion and the dataset and modeling
+sections were written with help from Claude (Anthropic).

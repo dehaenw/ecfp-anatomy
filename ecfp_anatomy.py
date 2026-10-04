@@ -68,31 +68,32 @@ def _():
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    # Anatomy of an ECFP: where do the bits come from, and how often do they lie?
+    # Anatomy of an ECFP
 
-    Extended-connectivity fingerprints (ECFP, or Morgan fingerprints in RDKit) are probably the most used molecular
-    representation in cheminformatics. They go into almost every QSAR baseline, similarity search and ADMET model,
-    and for good reason: although nothing about them is learned, count-based ECFP with a tree ensemble is a
-    baseline that is remarkably hard to beat in a meaningful way, and it regularly matches or outperforms pretrained
-    chemical foundation models such as ChemBERTa and MolFormer [1–3].
-    The usual mental picture is *"each bit is a substructure"*, which is only roughly true. This notebook asks one question:
+    Bit provenance and collisions in Morgan fingerprints, and what they mean for models trained and interpreted on
+    folded fingerprints.
 
-    > **When a model says "bit 1380 matters", which chemistry is it talking about, and how often is the honest answer
-    > "several unrelated things"?**
+    ECFP (Morgan) fingerprints are the default representation for QSAR, similarity search and ADMET modeling.
+    Although nothing about them is learned, count ECFP with a tree ensemble is a baseline that is hard to beat in a
+    meaningful way, and it regularly matches or outperforms pretrained chemical foundation models such as ChemBERTa
+    and MolFormer [1–3]. The working mental model is usually vague: the fingerprint somehow encodes certain
+    substructures into a bit vector. This notebook makes the encoding explicit and asks:
 
-    To answer it, we follow a molecule through the three steps that produce an ECFP:
+    > **When a model puts weight on bit 1380, which chemistry does that refer to, and how often is it several
+    > unrelated environments?**
 
-    1. **Atomic neighborhoods.** Every heavy atom starts as a radius-0 environment (its *invariants*: element,
-       degree, charge, ring membership, ...). Each iteration adds one more shell of bonded neighbors, up to radius
-       $r$. ECFP4 means $r = 2$ (diameter 4).
-    2. **Hashing and de-duplication.** Every environment is hashed to a 32-bit integer. If an environment covers exactly
-       the same bonds as one that was already seen, RDKit drops it. Those are the **redundant** environments.
-    3. **Folding.** The $2^{32}$ possible identifiers are folded into a short bit vector with
-       `bit = id mod fpSize`. Two different environments that land on the same bit are a **collision**:
-       the bit is on, but you can no longer tell which chemistry switched it on.
+    ECFP generation in three steps:
 
-    The figure below shows all three steps for a single molecule. It started out as a one-off figure for a paper; here it
-    is interactive. Change the molecule, radius or fingerprint length and watch the arrows move.
+    1. **Atom environments.** Each heavy atom starts as a radius-0 environment defined by its atom invariants
+       (element, degree, H count, charge, ring membership, ...). Each iteration adds one shell of bonded neighbors,
+       up to radius $r$. ECFP4 is $r = 2$.
+    2. **Hashing and deduplication.** Each environment is hashed to a 32-bit identifier. Environments that cover the
+       same bond set as one already seen are discarded (**redundant**).
+    3. **Folding.** Identifiers are mapped onto `fpSize` bits with `bit = id mod fpSize`. Distinct identifiers on the
+       same bit are a **collision**.
+
+    The figure below shows the three steps for one molecule (originally a static figure for a paper). Molecule,
+    radius, fpSize and invariants are adjustable.
     """)
     return
 
@@ -415,18 +416,15 @@ def _(anatomy_figure, env_df, fp_name, fp_size, mo, mol, radius):
     mo.vstack(
         [
             mo.callout(
-                mo.md("This molecule is large for the overview figure; icons get small. "
-                      "The bit inspector below works at any size."),
+                mo.md("Large molecule: icons get small. The bit inspector below works at any size."),
                 kind="warn",
             ) if _too_big else mo.md(""),
             _fig,
             mo.md(
-                "Each icon is one atom environment: the colored disc is the central atom, the dark bonds are the "
-                "environment, grey bonds are neighbors that only enter the hash as attachment points. The number "
-                "under each icon is the unfolded 32-bit identifier; grey arrows point to the bit it lands on "
-                "(`bit = id mod fpSize`). **Red arrows and red bits are collisions**: different identifiers, same "
-                "bit. Identical identifiers on different atoms (for example the three fluorines) are the *same* "
-                "feature and are not collisions."
+                "Each icon is one atom environment: colored disc = central atom, dark bonds = environment, grey "
+                "bonds = neighbors that enter the hash only as attachment points. Label: unfolded 32-bit identifier. "
+                "Arrow: target bit (`bit = id mod fpSize`). **Red: collision** (distinct identifiers, same bit). "
+                "Identical identifiers on different atoms (e.g. the CF3 fluorines) are one feature, not a collision."
             ),
         ]
     )
@@ -436,10 +434,10 @@ def _(anatomy_figure, env_df, fp_name, fp_size, mo, mol, radius):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Bit inspector: what does this bit mean in this molecule?
+    ## Bit inspector
 
-    Pick a bit that is switched on. You get every environment that lands on it. For a model, this is the set of
-    atoms that would share the credit (or the blame) if that bit gets a large weight.
+    All environments in the current molecule that set a given bit. If a model puts weight on that bit, these atoms
+    share the attribution.
     """)
     return
 
@@ -508,16 +506,14 @@ def _(Chem, Draw, bit_dd, draw_env_svg, env_atoms_bonds, env_df, env_smiles, mo,
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## How short can the fingerprint get?
+    ## Collisions vs fpSize
 
-    The unfolded fingerprint has no collisions (barring a 32-bit hash clash). Every halving of `fpSize` makes them
-    more likely. If the $n$ distinct features of a molecule behaved like random numbers, the expected number of bits
-    switched on in an $m$-bit vector is the classic balls-in-bins result
+    Unfolded identifiers only collide on a 32-bit hash clash. For $n$ distinct identifiers hashed uniformly into $m$
+    bits, the expected number of bits set is
 
     $$E[\text{bits on}] = m\left(1 - \left(1 - \tfrac{1}{m}\right)^{n}\right),$$
 
-    so roughly $n^2 / 2m$ features are lost. The dots are the real fold of the current molecule; the line is the
-    random-hash expectation.
+    i.e. roughly $n^2 / 2m$ features lost. Points: current molecule. Line: uniform-hash expectation.
     """)
     return
 
@@ -551,17 +547,14 @@ def _(alt, env_df, fp_size, mo, np, pd):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Scaling up: collisions in a real lead-optimization dataset
+    ## Collisions at dataset scale
 
-    One small molecule tells a cute story. To see whether this matters in practice, we fingerprint the training set of
-    the **OpenADMET / ExpansionRx blind challenge** (≈5,300 compounds from real lead-optimization campaigns,
-    CC BY 4.0). The settings above (radius, invariants, chirality) apply here as well.
+    Training set of the **OpenADMET / ExpansionRx blind challenge** (≈5,300 compounds from lead-optimization
+    campaigns, CC BY 4.0), fingerprinted with the settings above.
 
-    Two questions:
-
-    * **Per molecule:** what fraction of compounds has at least one collided bit at a given `fpSize`?
-    * **Across the dataset:** how many *different* environments share each bit? A model trained on this set sees
-      only the bit, so this is the number of chemical meanings a single coefficient or SHAP value has to cover.
+    * **Per molecule:** fraction of compounds with ≥1 collided bit.
+    * **Per bit:** number of distinct environments mapping to each used bit across the dataset, i.e. the number of
+      chemical meanings a single coefficient or SHAP value has to cover.
     """)
     return
 
@@ -655,12 +648,11 @@ def _(alt, doc_freq, fp_name, fp_size, mo, np, pd, per_mol):
     ) + _rule).properties(height=240, width=380, title="Across the dataset")
     _cur = coll_df[coll_df.fpSize == fp_size]
     _txt = (
-        f"With **{fp_name}**, **{_cur.frac.iloc[0]:.0%}** of the ExpansionRx molecules have at least one collided bit "
-        f"(random hashing would predict {_cur.expected.iloc[0]:.0%}), "
-        f"and each bit that is used stands for **{_cur.meanings.iloc[0]:.1f}** different environments on average "
-        f"(**{len(_all_uids):,}** distinct environments in total)."
+        f"**{fp_name}**: **{_cur.frac.iloc[0]:.0%}** of molecules have ≥1 collided bit "
+        f"(uniform hashing: {_cur.expected.iloc[0]:.0%}); each used bit maps to **{_cur.meanings.iloc[0]:.1f}** "
+        f"distinct environments on average (**{len(_all_uids):,}** environments in total)."
         if len(_cur) else
-        f"The dataset contains **{len(_all_uids):,}** distinct environments at these settings."
+        f"**{len(_all_uids):,}** distinct environments at these settings."
     )
     mo.vstack([mo.hstack([_c1, _c2], justify="start", gap=2), mo.md(_txt)])
     return
@@ -669,12 +661,11 @@ def _(alt, doc_freq, fp_name, fp_size, mo, np, pd, per_mol):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ### Which collisions actually hurt?
+    ### Most frequent colliding pairs
 
-    At larger `fpSize` (try 4096) the gap between observed and expected comes from a few unlucky pairs: two
-    *frequent* environments that happen to share a bit end up colliding in hundreds of molecules at once. These are the collisions, at the current
-    settings, that affect the most compounds in the dataset. A model cannot separate the two environments in any of
-    those molecules.
+    At larger `fpSize` (e.g. 4096) the excess over the uniform-hash expectation comes from a few pairs of *frequent*
+    environments that share a bit and therefore collide in hundreds of molecules. Below: the pairs affecting the most
+    compounds at the current settings. In those molecules the two environments are indistinguishable to any model.
     """)
     return
 
@@ -726,11 +717,10 @@ def _(data, draw_env_svg, env_smiles, fp_size, mo, np, pd, per_mol, uid_example)
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ### The most overloaded bits
+    ### Most overloaded bits
 
-    These are the bits with the most distinct meanings at the current `fpSize`. Select a row to see what is hiding
-    inside it, ranked by how many molecules contain each environment. If a model attributes importance to such a bit,
-    the explanation is a weighted mixture of everything in this gallery.
+    Bits with the most distinct environments at the current `fpSize`. Select a row to see the environments behind it,
+    ranked by document frequency. Importance assigned to such a bit is a weighted mixture of all of them.
     """)
     return
 
@@ -789,35 +779,38 @@ def _(mo):
     mo.md(r"""
     ## From bits to atoms: Ridge vs LightGBM
 
-    Collisions matter because ECFP is not a toy: despite being a fixed, *unlearned* featurization, it remains one of
-    the strongest representations for property prediction. Count-based ECFP fed to a tree ensemble is a baseline that
-    pretrained chemical foundation models (ChemBERTa, MolFormer and friends) often fail to beat in a meaningful way.
-    A benchmark of 25 pretrained embedding models on 25 datasets found that nearly all neural models show
-    "negligible or no improvement over the baseline ECFP" [1]; a systematic study of property prediction found
-    random forests on Morgan bit or count fingerprints generally achieving the lowest error on ChEMBL Ki
-    prediction [3].
-    So it is worth knowing what these models are actually reading.
+    A benchmark of 25 pretrained embedding models on 25 datasets found "negligible or no improvement over the
+    baseline ECFP" for nearly all neural models [1], and random forests on Morgan bit or count fingerprints generally
+    gave the lowest error for ChEMBL Ki prediction [3]. Since these models are widely used, it is worth checking what
+    they read from the fingerprint.
 
-    We fit two model families, each on two featurizations:
+    Two model families, each on two featurizations:
 
-    * **Ridge regression** is as interpretable as models get: $\hat y = b_0 + \sum_k w_k \cdot \text{count}_k$,
-      so the contribution of bit $k$ to one prediction is simply $w_k \cdot \text{count}_k$.
-    * **LightGBM** is the non-linear workhorse. Its TreeSHAP values (`pred_contrib=True`) decompose every
-      prediction additively as well: $\hat y = \phi_0 + \sum_k \phi_k$. Unlike Ridge, a tree can also use the
-      *absence* of a bit, which gives a contribution that belongs to no atom. We report it separately.
+    * **Ridge**: $\hat y = b_0 + \sum_k w_k \cdot \text{count}_k$, so the contribution of bit $k$ is
+      $w_k \cdot \text{count}_k$.
+    * **LightGBM**: TreeSHAP (`pred_contrib=True`) gives an additive decomposition $\hat y = \phi_0 + \sum_k \phi_k$.
+      Trees can also split on the *absence* of a bit. That contribution belongs to no atom and is reported separately.
+    * **Folded**: `fpSize` bits.
+    * **Unfolded**: one column per identifier present in ≥3 training molecules. Collision-free, with a column count
+      comparable to a 4096-bit fingerprint.
 
-    and
-
-    * **folded**: the usual fingerprint with `fpSize` bits;
-    * **unfolded**: one column per distinct environment identifier seen in at least 3 training molecules. No
-      collisions by construction, and not much bigger than a 4096-bit fingerprint in practice.
-
-    A bit's contribution is handed to the environment occurrences that switched it on, and each occurrence splits
-    its share equally over the atoms it covers. The atom scores then add up to the prediction. The catch is that a
-    folded bit's weight was learned from **every** environment that ever landed on it. For each environment we compute
-    its **purity**: the fraction of training molecules with that bit switched on that actually contain this
-    environment. Attribution through a bit with purity 0.3 is 70 % *borrowed* from other chemistry.
+    Attribution: each column's contribution is split equally over the environment occurrences that set it, and each
+    occurrence's share equally over its atoms, so the atom scores sum to the prediction minus the base value. A folded
+    bit's weight is fitted on every environment that maps to it. **Purity** of an environment is the fraction of
+    training molecules with that bit on that contain the environment. At purity 0.3, 70 % of the attribution is
+    **borrowed** from other chemistry.
     """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.callout(mo.md(r"""
+    **Scope.** This section is exploratory, not a benchmark. Live numbers come from a single random 80/20 split so that
+    models refit in seconds. On one split, R² differences of a few hundredths are within split-to-split noise.
+    LightGBM is untuned, and random splits of lead-optimization series are optimistic for all models. Comparative
+    statements are checked with 5 × 5 repeated CV and Tukey HSD (panel below), following Ash *et al.* [4].
+    """), kind="info")
     return
 
 
@@ -848,7 +841,7 @@ def _(np):
     from sklearn.linear_model import Ridge as _Ridge
     import lightgbm as _lgb
 
-    LGBM_PARAMS = dict(n_estimators=400, learning_rate=0.05, num_leaves=31, min_child_samples=10,
+    LGBM_PARAMS = dict(n_estimators=200, learning_rate=0.1, num_leaves=31, min_child_samples=10,
                        subsample=0.8, subsample_freq=1, colsample_bytree=0.5, random_state=0, verbose=-1)
 
     def count_matrix(infos, rows, col_fn, n_cols):
@@ -1020,15 +1013,190 @@ def _(alt, count_matrix, fit_lgbm, fit_ridge, m_fold, mo, model_summary, np, pd,
     _lo = scan_df[scan_df.fpSize == 128].set_index("model").r2
     _hi = scan_df[scan_df.fpSize == 8192].set_index("model").r2
     mo.hstack([_chart, mo.md(
-        f"Folding hurts the linear model much more than the tree ensemble. At 128 bits Ridge drops to "
-        f"R² {_lo['Ridge']:.2f} while LightGBM still reaches {_lo['LightGBM']:.2f}: trees can split on "
-        f"combinations of bits and partly untangle a collided bit through its context. Ridge has a single "
-        f"coefficient per bit and no way around a collision. "
-        + (f"With 8192 bits the order even flips for this endpoint: Ridge {_hi['Ridge']:.2f} vs LightGBM "
-           f"{_hi['LightGBM']:.2f}." if _hi["Ridge"] > _hi["LightGBM"] else
-           f"With 8192 bits the gap narrows to Ridge {_hi['Ridge']:.2f} vs LightGBM {_hi['LightGBM']:.2f}.")
+        f"Folding costs Ridge far more than LightGBM: at 128 bits, R² {_lo['Ridge']:.2f} vs {_lo['LightGBM']:.2f}. "
+        f"Trees can resolve a collided bit through interactions with other bits; Ridge has one coefficient per bit. "
+        + (f"At 8192 bits Ridge overtakes LightGBM ({_hi['Ridge']:.2f} vs {_hi['LightGBM']:.2f}). "
+           if _hi["Ridge"] > _hi["LightGBM"] else
+           f"At 8192 bits: Ridge {_hi['Ridge']:.2f}, LightGBM {_hi['LightGBM']:.2f}. ")
+        + "Ridge is usually benchmarked on folded fingerprints, where it can look much weaker than it is "
+        "(compare its dashed unfolded line)."
     )], justify="start", gap=2, align="center")
     return (scan_df,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### Which differences are significant?
+
+    Protocol after Ash *et al.* [4]: 5 × 5 repeated CV (25 paired estimates per method), repeated-measures ANOVA, and
+    Tukey HSD for all pairwise comparisons. The unfolded vocabulary and the Ridge α are selected on the training folds
+    only. LightGBM hyperparameters are fixed.
+
+    Intervals are mean ± HSD/2, so non-overlapping intervals ⇔ significant difference (family-wise α = 0.05). Blue:
+    best. Red: significantly worse than best. Grey: not distinguishable from best. 150 fits take about a minute; the
+    panel runs on demand and is cached per endpoint and setting.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(fit_lgbm, fit_ridge, np):
+    from scipy import sparse as _sp3
+    from scipy.stats import f as _fdist, spearmanr as _spr, studentized_range as _sr
+
+    _CV_CACHE = {}
+
+    CV_METHODS = ["8 descriptors · LightGBM", "ECFP0 · LightGBM", "ECFP folded · Ridge", "ECFP unfolded · Ridge",
+                  "ECFP folded · LightGBM", "ECFP unfolded · LightGBM"]
+
+    def repeated_cv(key, infos, rows, y, desc, m_fold, n_rep=5, n_folds=5, progress=None):
+        """5x5 repeated CV of all methods on the same folds; one row per (repeat, fold, method)."""
+        if key in _CV_CACHE:
+            return _CV_CACHE[key]
+        # one matrix over every identifier, from which all featurizations are column subsets
+        index, is_r0, R, C, V = {}, [], [], [], []
+        for r, i in enumerate(rows):
+            for u, occ in infos[i].items():
+                j = index.setdefault(u, len(index))
+                if j == len(is_r0):
+                    is_r0.append(occ[0][1] == 0)
+                R.append(r)
+                C.append(j)
+                V.append(len(occ))
+        X_all = _sp3.csr_matrix((V, (R, C)), shape=(len(rows), len(index)), dtype=np.float64)
+        is_r0 = np.array(is_r0)
+        uids = np.fromiter(index.keys(), dtype=np.int64, count=len(index))
+        fold_map = _sp3.csr_matrix((np.ones(len(uids)), (np.arange(len(uids)), uids % m_fold)),
+                                   shape=(len(uids), m_fold))
+        X_fold = (X_all @ fold_map).tocsr()
+        D = desc[rows]
+        out = []
+        for rep in range(n_rep):
+            parts = np.array_split(np.random.default_rng(100 + rep).permutation(len(rows)), n_folds)
+            for f in range(n_folds):
+                te = parts[f]
+                tr = np.concatenate([parts[g] for g in range(n_folds) if g != f])
+                doc = np.asarray((X_all[tr] > 0).sum(axis=0)).ravel()
+                X_unf = X_all[:, np.flatnonzero(doc >= 3)].tocsr()
+                X_r0 = X_all[:, np.flatnonzero(is_r0 & (doc >= 1))].tocsr()
+                ytr, yte = y[tr], y[te]
+                preds = {
+                    "8 descriptors · LightGBM": fit_lgbm(_sp3.csr_matrix(D[tr]), ytr).predict(
+                        _sp3.csr_matrix(D[te]).astype(np.float32)),
+                    "ECFP0 · LightGBM": fit_lgbm(X_r0[tr], ytr).predict(X_r0[te].astype(np.float32)),
+                    "ECFP folded · Ridge": fit_ridge(X_fold[tr], ytr, alphas=(1, 3, 10, 30), n_folds=3)[0].predict(X_fold[te]),
+                    "ECFP unfolded · Ridge": fit_ridge(X_unf[tr], ytr, alphas=(1, 3, 10, 30), n_folds=3)[0].predict(X_unf[te]),
+                    "ECFP folded · LightGBM": fit_lgbm(X_fold[tr], ytr).predict(X_fold[te].astype(np.float32)),
+                    "ECFP unfolded · LightGBM": fit_lgbm(X_unf[tr], ytr).predict(X_unf[te].astype(np.float32)),
+                    "mean predictor (null)": np.full(len(te), ytr.mean()),
+                }
+                for meth, p in preds.items():
+                    out.append(dict(rep=rep, fold=f, method=meth, MAE=np.abs(p - yte).mean(),
+                                    R2=1 - ((p - yte) ** 2).sum() / ((yte - yte.mean()) ** 2).sum(),
+                                    Spearman=_spr(p, yte)[0] if np.ptp(p) > 0 else 0.0))
+                if progress is not None:
+                    progress.update()
+        _CV_CACHE[key] = out
+        return out
+
+    def rm_anova_tukey(M, alpha=0.05):
+        """Repeated-measures ANOVA (subjects = CV folds) and the Tukey HSD for an n x k score matrix."""
+        n, k = M.shape
+        grand = M.mean()
+        ss_m = n * ((M.mean(axis=0) - grand) ** 2).sum()
+        ss_s = k * ((M.mean(axis=1) - grand) ** 2).sum()
+        ss_e = ((M - grand) ** 2).sum() - ss_m - ss_s
+        df_m, df_e = k - 1, (k - 1) * (n - 1)
+        p = _fdist.sf((ss_m / df_m) / (ss_e / df_e), df_m, df_e)
+        hsd = _sr.ppf(1 - alpha, k, df_e) * np.sqrt(ss_e / df_e / n)
+        return p, hsd
+
+    def cv_is_cached(key):
+        return key in _CV_CACHE
+
+    return CV_METHODS, cv_is_cached, repeated_cv, rm_anova_tukey
+
+
+@app.cell(hide_code=True)
+def _(chirality, cv_is_cached, endpoint_dd, m_fold, mo, radius, use_features):
+    cv_key = (endpoint_dd.value, radius, use_features, chirality, m_fold)
+    cv_button = mo.ui.run_button(label=f"Run 5 × 5 repeated CV for {endpoint_dd.value} (~1 min)")
+    cv_button if not cv_is_cached(cv_key) else mo.md(f"*Cached result for {endpoint_dd.value}.*")
+    return cv_button, cv_key
+
+
+@app.cell(hide_code=True)
+def _(CV_METHODS, ENDPOINTS, alt, cv_button, cv_is_cached, cv_key, data, descriptors, endpoint_dd, m_fold, mo, np, pd, per_mol_info, repeated_cv, rm_anova_tukey):
+    mo.stop(not (cv_button.value or cv_is_cached(cv_key)),
+            mo.md("*Not run yet.*"))
+    _col, _log, _ = ENDPOINTS[endpoint_dd.value]
+    _y = data[_col].to_numpy(dtype=float)
+    _rows = np.flatnonzero(~np.isnan(_y))
+    _y = np.log10(_y[_rows] + 1) if _log else _y[_rows]
+    with mo.status.progress_bar(total=25, title="5 × 5 repeated CV", remove_on_exit=True) as _bar:
+        cv_df = pd.DataFrame(repeated_cv(cv_key, per_mol_info, _rows, _y, descriptors, m_fold, progress=_bar))
+
+    _lower_better = {"MAE": True, "R2": False, "Spearman": False}
+    _panels, cv_stats = [], {}
+    for _metric, _low in _lower_better.items():
+        _M = cv_df[cv_df.method.isin(CV_METHODS)].pivot_table(index=["rep", "fold"], columns="method",
+                                                              values=_metric)[CV_METHODS].to_numpy()
+        _p, _hsd = rm_anova_tukey(_M)
+        _means = _M.mean(axis=0)
+        _best = int(np.argmin(_means) if _low else np.argmax(_means))
+        _status = ["best" if j == _best else ("significantly worse" if abs(_means[j] - _means[_best]) > _hsd
+                                              else "not distinguishable") for j in range(len(CV_METHODS))]
+        cv_stats[_metric] = dict(p=_p, hsd=_hsd, means=dict(zip(CV_METHODS, _means)))
+        _d = pd.DataFrame(dict(method=CV_METHODS, mean=_means, lo=_means - _hsd / 2, hi=_means + _hsd / 2,
+                               status=_status))
+        _color = alt.Color("status:N", title=None, scale=alt.Scale(
+            domain=["best", "not distinguishable", "significantly worse"], range=["#3b6fb6", "#9a9a9a", "#e8585a"]))
+        _y_enc = alt.Y("method:N", sort=CV_METHODS, title=None)
+        _layers = [
+            alt.Chart(_d).mark_rule(strokeWidth=2).encode(x=alt.X("lo:Q", title=_metric.replace("R2", "R²"),
+                                                                  scale=alt.Scale(zero=False)), x2="hi:Q",
+                                                         y=_y_enc, color=_color),
+            alt.Chart(_d).mark_point(filled=True, size=60).encode(
+                x="mean:Q", y=_y_enc, color=_color,
+                tooltip=["method", alt.Tooltip("mean:Q", format=".3f"), "status"]),
+        ]
+        _panels.append(alt.layer(*_layers).properties(
+            width=230, height=170, title=f"{_metric.replace('R2', 'R²')}   (ANOVA p = {_p:.1e})"))
+    mo.vstack([alt.hconcat(*_panels).resolve_scale(color="shared"),
+               mo.md(f"Null model (training mean) MAE: "
+                     f"**{cv_df[cv_df.method == 'mean predictor (null)'].MAE.mean():.2f}**. On log10 endpoints, "
+                     f"MAE 0.3 ≈ 2-fold error.")])
+    return cv_df, cv_stats
+
+
+@app.cell(hide_code=True)
+def _(CV_METHODS, cv_df, cv_stats, mo, np, pd):
+    _pairs = [
+        ("ECFP unfolded · Ridge", "ECFP folded · Ridge", "unfolding, linear model"),
+        ("ECFP unfolded · LightGBM", "ECFP folded · LightGBM", "unfolding, tree ensemble"),
+        ("ECFP folded · LightGBM", "ECFP folded · Ridge", "tree vs linear, folded"),
+        ("ECFP folded · LightGBM", "ECFP0 · LightGBM", "topology (r ≤ 2) vs atom types"),
+        ("ECFP folded · LightGBM", "8 descriptors · LightGBM", "fingerprint vs 8 descriptors"),
+    ]
+    _rows = []
+    for _a, _b, _what in _pairs:
+        _row = {"comparison": f"{_a}  −  {_b}", "question": _what}
+        for _metric in ["MAE", "R2", "Spearman"]:
+            _s = cv_stats[_metric]
+            _diff = _s["means"][_a] - _s["means"][_b]
+            _sig = abs(_diff) > _s["hsd"]
+            _row[_metric] = f"{_diff:+.3f} [{_diff - _s['hsd']:+.3f}, {_diff + _s['hsd']:+.3f}]{' *' if _sig else ''}"
+        _rows.append(_row)
+    mo.vstack([
+        mo.md("**Differences underlying the notebook's claims**: mean difference over 25 folds with Tukey "
+              "simultaneous 95 % interval; * = significant. ΔMAE < 0 and ΔR² > 0 favour the first method."),
+        mo.ui.table(pd.DataFrame(_rows), selection=None, pagination=False),
+        mo.md("Statistical significance is not practical significance [4]: with 25 paired folds, small "
+              "differences become significant, so read the interval in endpoint units. Parametric assumptions are "
+              "not checked, and there is no scaffold or time split."),
+    ])
+    return
 
 
 @app.cell(hide_code=True)
@@ -1074,9 +1242,9 @@ def _(bit_on_train, env_atoms_bonds, m_fold, np, train_doc_freq, vocab):
 
 @app.cell(hide_code=True)
 def _(mo):
-    attr_model_rb = mo.ui.radio(options=["Ridge", "LightGBM"], value="Ridge", label="Explain which model?",
+    attr_model_rb = mo.ui.radio(options=["Ridge", "LightGBM"], value="Ridge", label="Attribution for",
                                 inline=True)
-    mo.vstack([mo.md("### How much of the explanation is borrowed?"), attr_model_rb])
+    mo.vstack([mo.md("### Borrowed attribution"), attr_model_rb])
     return (attr_model_rb,)
 
 
@@ -1113,17 +1281,16 @@ def _(attr_model, mo, test_expl):
         mo.stat(f"{test_expl.atom_r.median():.2f}", label="median atom-level correlation",
                 caption="folded vs unfolded explanation"),
         mo.stat(f"{(test_expl.sign_flips > 0).mean():.0%}", label="molecules with a sign flip",
-                caption="an atom important in both maps (≥25 % of max) changes sign"),
+                caption="atom with ≥25 % of max |attribution| in both maps changes sign"),
     ]
     if attr_model == "LightGBM":
         _stats.append(mo.stat(f"{test_expl.absent_share.median():.0%}", label="median 'absent bit' share",
-                              caption="attribution from bits that are off: belongs to no atom"))
+                              caption="attribution from bits that are off (no atom)"))
     mo.vstack([
         mo.hstack(_stats, widths="equal"),
-        mo.md("Some disagreement between the two maps is expected even without collisions: a model spreads "
-              "weight over correlated features differently when the columns change. The *borrowed* share is the "
-              "part that is directly caused by bit sharing. Pick a test molecule below (sorted by borrowed "
-              "attribution, most affected first) to see the explanations side by side."),
+        mo.md("Folded and unfolded maps differ even without collisions, because the model redistributes weight "
+              "over correlated features when the columns change. The *borrowed* share isolates the part due to bit "
+              "sharing. Test molecules below are sorted by borrowed share."),
     ])
     return
 
@@ -1241,9 +1408,9 @@ def _(env_smiles, mo, pd, sel_mol, sel_records):
     _df = _df.reindex(_df.contrib_folded.abs().sort_values(ascending=False).index)
     _n_flip = int(_df.sign_flip.sum())
     mo.vstack([
-        mo.md(f"**Every environment in this molecule**, ordered by the size of its folded contribution. "
-              f"{_n_flip} environment(s) contribute with the opposite sign in the unfolded model. "
-              f"Low purity means the bit's contribution mostly reflects other chemistry."),
+        mo.md(f"**All environments in this molecule**, sorted by |folded contribution|. "
+              f"{_n_flip} contribute with the opposite sign in the unfolded model. "
+              f"Low purity: the bit's contribution mostly reflects other environments."),
         mo.ui.table(
             _df[["environment", "radius", "n", "bit", "purity", "contrib_folded", "contrib_unfolded",
                  "sign_flip"]].round(3).reset_index(drop=True),
@@ -1271,25 +1438,21 @@ def _(data, np):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Food for thought: how deep is the chemistry?
+    ## Food for thought: how much of this is bulk physchem?
 
-    Interpretation studies often find that a model's important features are, on closer inspection, fairly basic:
-    lipophilicity, size, polarity. Many ADMET endpoints correlate with exactly those bulk properties. So how much of
-    what the ECFP models do could be done with **eight textbook descriptors** (Crippen logP, MW, TPSA, HBD, HBA,
-    rotatable bonds, aromatic rings, Fsp3)?
+    Many ADMET endpoints correlate with lipophilicity, size and polarity, and feature-importance analyses often reduce
+    to these. How much of the ECFP models' performance is reproduced by **eight standard descriptors** (Crippen logP,
+    MW, TPSA, HBD, HBA, rotatable bonds, aromatic rings, Fsp3)?
 
-    There is precedent for the suspicion. Torrisi *et al.* found that chemical language models, regardless of size or
-    pre-training data, mostly performed on par with **ECFP0** [2]: radius 0, i.e. atom types and their basic
-    properties with no topology at all. If a large pretrained model is roughly as good as counting atom types,
-    it has probably not learned much chemistry beyond composition and bulk properties.
+    Related: Torrisi *et al.* found that chemical language models, regardless of size or pretraining set, mostly
+    performed on par with **ECFP0** [2], i.e. atom-type counts without topology. A pretrained model that performs at
+    ECFP0 level has learned little beyond composition and bulk properties.
 
-    Three checks, on the same split:
+    Checks (same split):
 
-    1. **Descriptor-only models:** fit Ridge and LightGBM on the eight descriptors alone.
-    2. **ECFP0 models:** the same, on unfolded radius-0 counts (atom types only).
-    3. **Proxy test:** take each ECFP model's predictions and see how much of their variance a *linear* function of
-       the eight descriptors reproduces. A high value means the fingerprint model is, to that extent, a convoluted
-       way of computing logP and friends.
+    1. **Descriptors:** Ridge and LightGBM on the eight descriptors.
+    2. **ECFP0:** Ridge and LightGBM on unfolded radius-0 counts.
+    3. **Proxy:** variance of each ECFP model's predictions explained by a linear model on the eight descriptors.
     """)
     return
 
@@ -1352,20 +1515,17 @@ def _(DESCRIPTOR_NAMES, alt, count_matrix, descriptors, endpoint_dd, fit_lgbm, f
     mo.vstack([
         mo.hstack([_bars, _bars2], justify="start", gap=2),
         mo.md(
-            f"For **{endpoint_dd.value}**, eight descriptors reach R² **{_best_desc:.2f}**, against "
-            f"**{_best_ecfp:.2f}** for the best ECFP model: {_best_desc / _best_ecfp:.0%} of the performance "
-            f"with {len(DESCRIPTOR_NAMES)} numbers instead of thousands of bits. Crippen logP alone correlates "
-            f"with the measured values at r = {_logp_r:.2f}, and **{_lgbm_proxy:.0%}** of the variance in the "
-            f"folded LightGBM predictions is a linear function of the eight descriptors. Atom-type counts "
-            f"alone (ECFP0) reach R² **{_best_r0:.2f}**."
+            f"**{endpoint_dd.value}**: eight descriptors reach R² **{_best_desc:.2f}** vs **{_best_ecfp:.2f}** for the "
+            f"best ECFP model ({_best_desc / _best_ecfp:.0%}), and ECFP0 reaches **{_best_r0:.2f}**. Crippen logP "
+            f"alone correlates with the measured values at r = {_logp_r:.2f}. A linear model on the descriptors "
+            f"explains **{_lgbm_proxy:.0%}** of the variance of the folded LightGBM predictions."
         ),
         mo.md(
-            "This does not mean the fingerprint models learn nothing else: the gap to the descriptor models is "
-            "real, and with a random split some of it comes from recognizing close analogs within a series. "
-            "But it is a useful sanity check before reading deep chemistry into an attribution map. Much of the "
-            "signal is bulk physicochemistry that the model reconstructs from substructure counts, and sophisticated "
-            "models that only modestly outperform this baseline may not be learning much that is chemically "
-            "richer. Try switching the endpoint: the share explained by simple descriptors varies a lot."
+            "The gap to descriptors and ECFP0 is significant on every endpoint in the 5 × 5 CV, so the fingerprint "
+            "models do use topology. With a random split, part of that gap is near-neighbour recall within series. "
+            "Still, much of the signal is bulk physicochemistry reconstructed from substructure counts. That is "
+            "worth keeping in mind before reading specific chemistry into an attribution map, or into a more "
+            "complex model that only modestly beats this baseline. The descriptor share varies strongly by endpoint."
         ),
     ])
     return
@@ -1376,29 +1536,33 @@ def _(mo):
     mo.md(r"""
     ## Take-aways
 
-    * An ECFP bit is a *bucket*, not a substructure. For ECFP4 on the ExpansionRx set, about half of the molecules
-      (52%) have at least one collided bit at the common default of 2048 bits, and every used bit stands for
-      about four different environments across the dataset.
-    * Doubling to 4096 bits helps less than expected (43% of molecules vs. 29% for random hashing), because a few
-      very frequent environments happen to share bits. Which collisions you get is a property of your dataset,
-      so it is worth checking, not assuming.
-    * Redundant environments are dropped before hashing, so the number of features is smaller than
-      atoms x (radius + 1), especially for small or symmetric molecules.
-    * Bit contributions map back onto atoms exactly, for Ridge (weight x count) and for LightGBM (TreeSHAP). But at
-      2048 bits roughly a tenth of that atom-level explanation (median 9 % for Ridge, 13 % for LightGBM on LogD) was
-      learned from *other* environments that share the bits. The worst-hit test molecules get 25–30 % of their
-      explanation from chemistry they do not contain. LightGBM additionally puts about a tenth of its attribution
-      on bits that are *off*, which no atom can carry.
-    * Folding costs a linear model much more than a tree ensemble: on LogD at 128 bits, Ridge falls to R² 0.54
-      while LightGBM keeps 0.80. For Ridge, the unfolded fingerprint beat the 2048-bit default on every endpoint
-      (LogD 0.90 vs 0.85) with a comparable number of columns. If you want to read weights as chemistry, don't fold.
-    * Food for thought: eight textbook descriptors with LightGBM recover roughly 60–80 % of the best ECFP model's
-      R² across the ExpansionRx endpoints (LogD 0.71 vs 0.90), and a linear function of those descriptors explains
-      20–55 % of the variance in the ECFP models' own predictions. Unfolded ECFP0 counts (atom types, no topology)
-      get even closer: 79–91 % of the best ECFP4 R² (LogD 0.78 vs 0.90), echoing the finding that chemical language
-      models perform on par with ECFP0 [2]. A lot of what looks like substructure learning
-      is bulk physicochemistry in disguise, which is worth remembering before reading deep chemistry into an
-      attribution map, or into a sophisticated model that only modestly beats this baseline.
+    * An ECFP bit is a hash bucket. With ECFP4/2048 on ExpansionRx, 52 % of molecules have ≥1 collided bit, and each
+      used bit maps to ~4 distinct environments across the dataset.
+    * At 4096 bits, 43 % of molecules still have a collision (uniform hashing: 29 %). The excess comes from a few
+      frequent environment pairs that share bits, so collision structure is dataset-specific.
+    * Redundant environments are removed before hashing, so the feature count is below atoms × (r + 1), notably for
+      small or symmetric molecules.
+    * Atom attributions are exact for both Ridge (w · count) and LightGBM (TreeSHAP), but at 2048 bits part of them
+      is borrowed from other environments: median 9 % (Ridge) and 13 % (LightGBM) for LogD, 10–20 % for LightGBM
+      across endpoints, and 25–30 % for the worst-affected molecules. LightGBM also attributes to bits that are off
+      (median 12 % for LogD, up to 46 % for the efflux ratio), which cannot be mapped onto atoms.
+
+    The comparisons below are from 5 × 5 repeated CV with Tukey HSD [4] on all eight endpoints (ECFP4, 2048 bits) and
+    can be reproduced with the panel above.
+
+    * Ridge on unfolded counts is a much stronger model than its folded performance suggests. Unfolding improves
+      Ridge significantly on LogD, KSOL, HLM and MLM CLint (LogD R² 0.901 vs 0.855, MAE 0.260 vs 0.325) and is never
+      worse. Unfolded Ridge is the best of the six methods on LogD (R² 0.901 vs 0.870 for the best LightGBM) and best
+      or tied-best on both protein-binding endpoints. Ridge is usually run on folded bit vectors, where it degrades
+      fastest (single split, LogD, 128 bits: R² 0.54 vs 0.79 for LightGBM). Its reputation as a weak fingerprint
+      baseline may partly be a folding artifact.
+    * LightGBM is robust to folding: unfolding is significant only for LogD (+0.01 R²). At 2048 bits, LightGBM beats
+      folded Ridge on five endpoints, is indistinguishable on LogD, and loses on both protein-binding endpoints. No
+      method wins everywhere, and single-split differences of a few hundredths are noise.
+    * Eight descriptors with LightGBM reach 60–76 % of the best ECFP model's CV R² (LogD 0.69 vs 0.90). A linear model
+      on them explains 20–57 % of the variance of the ECFP models' predictions. ECFP0 reaches 78–91 % (LogD 0.77 vs
+      0.90), consistent with chemical language models performing at ECFP0 level [2]. ECFP4 beats both significantly
+      on every endpoint, but much of the apparent substructure learning is bulk physicochemistry.
 
     ### References
 
@@ -1409,11 +1573,15 @@ def _(mo):
        Development (2023). <https://doi.org/10.1101/2023.11.07.566025>
     3. J. Deng, Z. Yang, H. Wang, I. Ojima, D. Samaras, F. Wang. *A systematic study of key elements underlying
        molecular property prediction.* Nat. Commun. 14, 6395 (2023). <https://doi.org/10.1038/s41467-023-41948-6>
+    4. J. R. Ash, C. Wognum, R. Rodríguez-Pérez, M. Aldeghi, A. C. Cheng, D.-A. Clevert, O. Engkvist, C. Fang,
+       D. J. Price, J. M. Hughes-Oliver, W. P. Walters. *Practically Significant Method Comparison Protocols for
+       Machine Learning in Small Molecule Drug Discovery.* J. Chem. Inf. Model. 65, 9398–9411 (2025).
+       <https://doi.org/10.1021/acs.jcim.5c01609>
 
     ---
     *Data:* OpenADMET / ExpansionRx blind challenge training set (CC BY 4.0).
-    *AI disclosure:* the original visualization was hand-written for a paper; converting it into this interactive
-    marimo notebook was done with help from Claude (Anthropic).
+    *AI disclosure:* the visualization was originally hand-written for a paper. The marimo conversion and the dataset
+    and modeling sections were written with help from Claude (Anthropic).
     """)
     return
 
